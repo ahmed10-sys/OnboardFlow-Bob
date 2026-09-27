@@ -1,12 +1,497 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>OnboardFlow — Architecture Tour</title>
+  <title>{{PROJECT_NAME}} — Architecture Tour</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            surface:  '#0f1117',
+            card:     '#161b27',
+            border:   '#1e2535',
+            subtle:   '#2a3348',
+            muted:    '#64748b',
+            accent:   '#6366f1',
+            'accent-dim': '#312e81',
+            teal:     '#14b8a6',
+            rose:     '#f43f5e',
+            amber:    '#f59e0b',
+            ink:      '#e2e8f0',
+            faint:    '#94a3b8',
+          },
+          fontFamily: {
+            sans: ['"Inter"', 'system-ui', 'sans-serif'],
+            mono: ['"JetBrains Mono"', '"Fira Mono"', 'monospace'],
+          },
+        }
+      }
+    }
+  </script>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+
+  <!-- highlight.js -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark-dimmed.min.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+
+  <style>
+    /* Smooth scroll globally — covers sidebar nav anchor clicks */
+    html { scroll-behavior: smooth; }
+
+    body { background: #0f1117; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0f1117; }
+    ::-webkit-scrollbar-thumb { background: #2a3348; border-radius: 3px; }
+
+    /* Sidebar active state */
+    .nav-link.active { color: #6366f1; border-left-color: #6366f1; background: rgba(99,102,241,0.07); }
+
+    /* Mermaid container */
+    .mermaid svg { max-width: 100%; height: auto; }
+
+    /* Fade-in sections — hero (#hero) starts visible so it never gets stuck */
+    .section-fade { opacity: 0; transform: translateY(16px); transition: opacity 0.45s ease, transform 0.45s ease; }
+    .section-fade.visible { opacity: 1; transform: none; }
+    #hero.section-fade { opacity: 1; transform: none; }   /* hero is above fold — skip animation */
+
+    /* Copy button flash */
+    .copy-btn.copied { background: #14b8a6 !important; color: #0f1117 !important; }
+
+    /* Step connector line */
+    .flow-list > .flow-card:not(:last-child)::after {
+      content: '';
+      display: block;
+      width: 2px;
+      height: 1.5rem;
+      background: #1e2535;
+      margin: 0 auto;
+    }
+
+    /* hljs override — match dark surface, no double radius */
+    .hljs { background: #0d1117 !important; border-radius: 0 0 0.5rem 0.5rem; }
+
+    /* Mermaid node hover */
+    .mermaid svg .node { cursor: pointer; }
+
+    /* Card highlight pulse */
+    @keyframes card-ping {
+      0%   { box-shadow: 0 0 0 0px rgba(99,102,241,0.7),  0 0 0 0px  rgba(20,184,166,0.4); }
+      40%  { box-shadow: 0 0 0 6px rgba(99,102,241,0.35), 0 0 0 12px rgba(20,184,166,0.1); }
+      100% { box-shadow: 0 0 0 0px rgba(99,102,241,0),    0 0 0 0px  rgba(20,184,166,0);   }
+    }
+    .stage-highlight {
+      animation: card-ping 0.85s ease-out forwards;
+      outline: 2px solid #6366f1;
+      outline-offset: 3px;
+    }
+
+    /* Empty-state banner — shown when template tokens were not replaced */
+    .empty-state-banner {
+      display: none;
+      position: fixed;
+      bottom: 1.5rem;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 200;
+      background: #1e2535;
+      border: 1px solid #6366f1;
+      border-radius: 0.75rem;
+      padding: 0.85rem 1.5rem;
+      color: #e2e8f0;
+      font-size: 0.8rem;
+      line-height: 1.5;
+      max-width: 480px;
+      width: calc(100% - 3rem);
+      text-align: center;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.6);
+    }
+    .empty-state-banner.visible { display: block; }
+
+    /* Responsive table — prevent overflow on narrow viewports */
+    @media (max-width: 640px) {
+      .px-5 { padding-left: 0.75rem; padding-right: 0.75rem; }
+      h1 { font-size: 1.75rem; }
+    }
+  </style>
 </head>
-<body>
-  <h1>OnboardFlow — placeholder</h1>
-  <p>Run <code>python visualizer.py</code> to regenerate this page.</p>
+<body class="font-sans text-ink bg-surface min-h-screen">
+
+<!-- Empty-state banner — shown by JS when {{ }} tokens are still present -->
+<div id="empty-state" class="empty-state-banner" role="alert">
+  <strong style="color:#6366f1">Page not generated yet.</strong><br>
+  Run <code style="background:#2a3348;padding:1px 6px;border-radius:4px;">python visualizer.py</code>
+  then refresh this page.
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ SIDEBAR -->
+<aside id="sidebar" class="fixed top-0 left-0 h-screen w-56 bg-card border-r border-border z-50 flex flex-col overflow-y-auto hidden lg:flex">
+  <div class="px-5 py-5 border-b border-border">
+    <p class="text-xs font-semibold text-faint uppercase tracking-widest mb-1">Architecture Tour</p>
+    <p class="text-sm font-bold text-ink truncate">{{PROJECT_NAME}}</p>
+  </div>
+  <nav class="flex-1 py-3 space-y-0.5 px-2">
+    <a href="#hero"      class="nav-link block px-3 py-2 rounded text-sm text-faint border-l-2 border-transparent hover:text-ink hover:bg-subtle/40 transition-colors">Overview</a>
+    <a href="#diagram"   class="nav-link block px-3 py-2 rounded text-sm text-faint border-l-2 border-transparent hover:text-ink hover:bg-subtle/40 transition-colors">Architecture</a>
+    <a href="#flow"      class="nav-link block px-3 py-2 rounded text-sm text-faint border-l-2 border-transparent hover:text-ink hover:bg-subtle/40 transition-colors">Pipeline</a>
+    <a href="#models"    class="nav-link block px-3 py-2 rounded text-sm text-faint border-l-2 border-transparent hover:text-ink hover:bg-subtle/40 transition-colors">Data Models</a>
+    <a href="#filesystem" class="nav-link block px-3 py-2 rounded text-sm text-faint border-l-2 border-transparent hover:text-ink hover:bg-subtle/40 transition-colors">File System</a>
+    <a href="#playbook"  class="nav-link block px-3 py-2 rounded text-sm text-faint border-l-2 border-transparent hover:text-ink hover:bg-subtle/40 transition-colors">Setup Playbook</a>
+  </nav>
+  <div class="px-5 py-4 border-t border-border">
+    <p class="text-xs text-muted">OnboardFlow</p>
+  </div>
+</aside>
+
+<!-- ═══════════════════════════════════════════════════════════════ MAIN -->
+<div class="lg:ml-56">
+
+  <!-- ─────────────────────────────────────────────────────── HERO -->
+  <section id="hero" class="section-fade border-b border-border px-8 py-14 lg:px-16">
+    <div class="max-w-4xl">
+      <!-- Archetype pill -->
+      <span class="inline-block text-xs font-semibold uppercase tracking-widest text-accent bg-accent-dim/50 px-3 py-1 rounded-full mb-5">{{PROJECT_ARCHETYPE}}</span>
+
+      <!-- Title row -->
+      <div class="flex items-baseline gap-4 mb-2 flex-wrap">
+        <h1 class="text-4xl font-bold text-ink">{{PROJECT_NAME}}</h1>
+        <span class="text-sm font-mono text-muted bg-subtle px-2 py-0.5 rounded">v{{PROJECT_VERSION}}</span>
+      </div>
+
+      <!-- Summary -->
+      <p class="text-base text-faint leading-relaxed max-w-3xl mb-8">{{PROJECT_SUMMARY}}</p>
+
+      <!-- Description cards -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+        <div class="bg-card border border-border rounded-xl p-5">
+          <p class="text-xs font-semibold uppercase tracking-widest text-muted mb-2">Primary Purpose</p>
+          <p class="text-sm text-faint leading-relaxed">{{PRIMARY_PURPOSE}}</p>
+        </div>
+        <div class="bg-card border border-border rounded-xl p-5">
+          <p class="text-xs font-semibold uppercase tracking-widest text-muted mb-2">Architecture</p>
+          <p class="text-sm text-faint leading-relaxed">{{ARCHITECTURE_AND_CONTROL_FLOW}}</p>
+        </div>
+        <div class="bg-card border border-border rounded-xl p-5">
+          <p class="text-xs font-semibold uppercase tracking-widest text-muted mb-2">Edge Cases</p>
+          <p class="text-sm text-faint leading-relaxed">{{EDGE_CASES}}</p>
+        </div>
+      </div>
+
+      <!-- Hardware strip -->
+      <div class="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted mb-6">
+        <span>⬡ {{HW_GPU}}</span>
+        <span>⬡ ≥ {{HW_RAM}} GB RAM</span>
+        <span>⬡ {{HW_NOTES}}</span>
+      </div>
+
+      <!-- Tech stack badges -->
+      <div class="flex flex-wrap gap-2">
+        {{TECH_STACK_BADGES}}
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────────────────────── ARCHITECTURE DIAGRAM -->
+  <section id="diagram" class="section-fade border-b border-border px-8 py-12 lg:px-16">
+    <div class="max-w-5xl">
+      <div class="flex items-center gap-3 mb-6">
+        <div class="w-1 h-6 bg-accent rounded-full"></div>
+        <h2 class="text-xl font-bold text-ink">Architecture Diagram</h2>
+      </div>
+      <div class="bg-card border border-border rounded-xl p-6 overflow-x-auto">
+        <pre class="mermaid text-center">{{MERMAID_GRAPH}}</pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────────────────────────── PIPELINE / FLOW -->
+  <section id="flow" class="section-fade border-b border-border px-8 py-12 lg:px-16">
+    <div class="max-w-5xl">
+      <div class="flex items-center gap-3 mb-6">
+        <div class="w-1 h-6 bg-teal rounded-full"></div>
+        <h2 class="text-xl font-bold text-ink">Execution Pipeline</h2>
+      </div>
+      <div class="flow-list flex flex-col gap-0">
+        {{FLOW_CARDS}}
+      </div>
+    </div>
+  </section>
+
+  <!-- ───────────────────────────────────────────────── DATA MODELS -->
+  <section id="models" class="section-fade border-b border-border px-8 py-12 lg:px-16">
+    <div class="max-w-5xl">
+      <div class="flex items-center gap-3 mb-6">
+        <div class="w-1 h-6 bg-amber rounded-full"></div>
+        <h2 class="text-xl font-bold text-ink">Core Data Models</h2>
+      </div>
+      <div class="models-grid grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {{DATA_MODEL_CARDS}}
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────────────────────────────────────── FILE SYSTEM / DIR -->
+  <section id="filesystem" class="section-fade border-b border-border px-8 py-12 lg:px-16">
+    <div class="max-w-5xl">
+      <div class="flex items-center gap-3 mb-6">
+        <div class="w-1 h-6 bg-rose rounded-full"></div>
+        <h2 class="text-xl font-bold text-ink">File System Directory</h2>
+      </div>
+      <div class="bg-card border border-border rounded-xl overflow-hidden">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-border text-left">
+              <th class="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-muted">File</th>
+              <th class="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-muted">Role</th>
+              <th class="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-muted text-right">LoC</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-border">
+            {{DIRECTORY_TABLE_ROWS}}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ──────────────────────────────────────────────── SETUP PLAYBOOK -->
+  <section id="playbook" class="section-fade px-8 py-12 lg:px-16">
+    <div class="max-w-5xl">
+      <div class="flex items-center gap-3 mb-6">
+        <div class="w-1 h-6 bg-faint rounded-full"></div>
+        <h2 class="text-xl font-bold text-ink">Setup &amp; Verification Playbook</h2>
+      </div>
+
+      <!-- Prerequisites -->
+      <div class="bg-card border border-border rounded-xl p-5 mb-6">
+        <p class="text-xs font-semibold uppercase tracking-widest text-muted mb-3">Prerequisites</p>
+        <ul class="space-y-1.5 text-sm text-faint list-none">
+          {{SETUP_PREREQS}}
+        </ul>
+      </div>
+
+      <!-- Commands -->
+      <div class="flex flex-col gap-4">
+        {{SETUP_COMMANDS}}
+      </div>
+    </div>
+  </section>
+
+</div><!-- /.main -->
+
+<footer class="lg:ml-56 border-t border-border px-8 py-5 text-center text-xs text-muted">
+  Generated by <span class="text-faint font-semibold">OnboardFlow</span> &mdash; Made with IBM Bob
+</footer>
+
+<!-- ══════════════════════════════════════════════════════════ SCRIPTS -->
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+  mermaid.initialize({
+    startOnLoad: false,          // we call mermaid.run() manually so we can post-process
+    theme: 'dark',
+    darkMode: true,
+    securityLevel: 'loose',      // required for click handlers on SVG nodes
+    themeVariables: {
+      background:          '#161b27',
+      mainBkg:             '#1e2535',
+      nodeBorder:          '#6366f1',
+      clusterBkg:          '#0f1117',
+      titleColor:          '#e2e8f0',
+      edgeLabelBackground: '#0f1117',
+      lineColor:           '#6366f1',
+    },
+    flowchart: { curve: 'basis', padding: 20 },
+  });
+
+  // ── Build lookup table from flow card DOM ────────────────────────────────
+  // Collect every id="stage-*" card that exists in the page and build a list
+  // of { cardId, terms[] } where terms are the normalised text strings we'll
+  // try to match against SVG node labels.  We derive terms from the card's
+  // visible text (step number, name, module file) so the lookup works on any
+  // blueprint without knowing its stage_ids up front.
+  function buildCardIndex() {
+    var index = [];
+    document.querySelectorAll('[id^="stage-"]').forEach(function (card) {
+      var stepBadge = card.querySelector('[class*="rounded-full"]');
+      var nameBadge = card.querySelector('[class*="font-semibold text-sm"]');
+      var modulePill = card.querySelector('[class*="ml-auto"][class*="font-mono"]');
+
+      var terms = [card.id.replace('stage-', '')];   // e.g. "flow-01"
+      if (stepBadge) terms.push(stepBadge.textContent.trim().toLowerCase());
+      if (nameBadge) terms.push(nameBadge.textContent.trim().toLowerCase());
+      if (modulePill) terms.push(modulePill.textContent.trim().toLowerCase());
+
+      index.push({ cardId: card.id, terms: terms });
+    });
+    return index;
+  }
+
+  // ── Match a node's text label against the index ──────────────────────────
+  // Returns the cardId of the best match, or null.
+  // Strategy: exact substring match on any term.  This is intentionally
+  // broad — a node labelled "engine.py" will match a card with module_file
+  // "engine.py".  False positives are unlikely given the specificity of
+  // stage IDs, step numbers, and function names.
+  function findCard(label, index) {
+    var norm = label.toLowerCase().replace(/\s+/g, ' ').trim();
+    if (!norm) return null;
+    for (var i = 0; i < index.length; i++) {
+      var entry = index[i];
+      for (var j = 0; j < entry.terms.length; j++) {
+        if (norm.includes(entry.terms[j]) || entry.terms[j].includes(norm)) {
+          return entry.cardId;
+        }
+      }
+    }
+    return null;
+  }
+
+  // ── Highlight + scroll to a card ─────────────────────────────────────────
+  function jumpToCard(cardId) {
+    var card = document.getElementById(cardId);
+    if (!card) return;
+
+    // Scroll the Pipeline section into view first (ensures the section is visible)
+    var flowSection = document.getElementById('flow');
+    if (flowSection) flowSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    // Then scroll to the specific card with a short delay to let the section scroll settle
+    setTimeout(function () {
+      card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // Trigger highlight — remove first in case it's already animating
+      card.classList.remove('stage-highlight');
+      void card.offsetWidth;   // force reflow so re-adding restarts the animation
+      card.classList.add('stage-highlight');
+      card.addEventListener('animationend', function () {
+        card.classList.remove('stage-highlight');
+      }, { once: true });
+    }, 300);
+  }
+
+  // ── Wire up SVG nodes after Mermaid renders ───────────────────────────────
+  function wireNodes() {
+    var index = buildCardIndex();
+    if (!index.length) return;   // no flow cards on this page — nothing to wire
+
+    var svg = document.querySelector('.mermaid svg');
+    if (!svg) return;
+
+    // Mermaid wraps each flowchart node in a <g class="node …"> element.
+    // The visible label lives in a nested <span> (foreignObject) or <text>.
+    svg.querySelectorAll('g.node, g[class*="node"]').forEach(function (node) {
+      // Collect all text from this node element
+      var label = Array.from(node.querySelectorAll('text, span, p'))
+        .map(function (el) { return el.textContent; })
+        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      var cardId = findCard(label, index);
+      if (!cardId) return;
+
+      // Make the node visually interactive
+      node.style.cursor = 'pointer';
+      node.setAttribute('data-card', cardId);
+
+      node.addEventListener('click', function () {
+        jumpToCard(cardId);
+      });
+
+      // Subtle hover tint — add/remove an inline filter
+      node.addEventListener('mouseenter', function () {
+        node.style.filter = 'brightness(1.25)';
+      });
+      node.addEventListener('mouseleave', function () {
+        node.style.filter = '';
+      });
+    });
+  }
+
+  // ── Run Mermaid, then post-process ───────────────────────────────────────
+  // mermaid.run() returns a Promise; we wire nodes after it resolves.
+  // If the SVG isn't present yet (edge case: very slow CDN), we fall back
+  // to a MutationObserver so we never silently fail.
+  document.addEventListener('DOMContentLoaded', function () {
+    mermaid.run({ querySelector: '.mermaid' }).then(function () {
+      wireNodes();
+    }).catch(function (err) {
+      console.warn('OnboardFlow: Mermaid render error —', err);
+      // Still attempt wiring in case partial SVG was drawn
+      wireNodes();
+    });
+  });
+</script>
+
+<script>
+  // ── Empty-state detection ────────────────────────────────────────────────
+  // If the page body still contains unreplaced {{ }} tokens, visualizer.py
+  // was never run. Show a sticky banner rather than let raw template syntax
+  // confuse a demo audience.
+  document.addEventListener('DOMContentLoaded', function () {
+    var bodyText = document.body.innerText || '';
+    if (/\{\{[A-Z_]+\}\}/.test(bodyText)) {
+      var banner = document.getElementById('empty-state');
+      if (banner) banner.classList.add('visible');
+    }
+  });
+
+  // highlight.js
+  document.addEventListener('DOMContentLoaded', function () {
+    hljs.highlightAll();
+  });
+
+  // Scroll spy — sidebar active link
+  (function () {
+    var links = document.querySelectorAll('.nav-link');
+    var sectionIds = Array.from(links).map(function (a) {
+      return a.getAttribute('href').replace('#', '');
+    });
+    var sections = sectionIds.map(function (id) { return document.getElementById(id); }).filter(Boolean);
+
+    function update() {
+      var scrollY = window.scrollY + 90;
+      var active = sections[0];
+      sections.forEach(function (s) { if (s.offsetTop <= scrollY) active = s; });
+      links.forEach(function (a) {
+        a.classList.toggle('active', a.getAttribute('href') === '#' + active.id);
+      });
+    }
+    window.addEventListener('scroll', update, { passive: true });
+    update();
+  })();
+
+  // Section fade-in on scroll
+  (function () {
+    var obs = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add('visible'); } });
+    }, { threshold: 0.05 });
+    document.querySelectorAll('.section-fade').forEach(function (el) { obs.observe(el); });
+  })();
+
+  // Copy buttons
+  document.addEventListener('click', function (e) {
+    var btn = e.target.closest('.copy-btn');
+    if (!btn) return;
+    var code = btn.closest('.cmd-block').querySelector('code');
+    if (!code) return;
+    navigator.clipboard.writeText(code.innerText).then(function () {
+      btn.textContent = 'Copied!';
+      btn.classList.add('copied');
+      setTimeout(function () { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1800);
+    });
+  });
+</script>
+
 </body>
 </html>
